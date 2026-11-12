@@ -1,0 +1,28 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Datasets (Do NOT commit images to GitHub)
+data/
+*.zip
+*.tar.gz
+
+# Checkpoints & Large weights
+# Note: GitHub blocks files > 100MB. ResNet-18 is ~45MB, 
+# but best practice is to track runs locally or use Git LFS.
+checkpoints/*.pt
+!checkpoints/.gitkeep
+
+# TensorBoard logs
+runs/
+
+# IDE / OS specific
+.vscode/
+.idea/
+.DS_Store

@@ -1,89 +1,114 @@
 """
 generate_sample_data.py
-Procedurally generates synthetic industrial manufacturing images:
-- Normal: Uniform metallic disc with clean surface
-- Defective: Metallic disc with cracks, scratches, or holes
+Industrial Synthetic Defect Dataset Generator for VisionGuard.
+Generates realistic manufacturing anomalies: scratches, cracks, contamination, and structural defects.
 """
 import os
 import random
+import argparse
+from typing import Tuple
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
-def create_synthetic_image(is_defect: bool, size: int = 224) -> Image.Image:
-    # 1. Base metallic background with noise
-    base_color = random.randint(180, 210)
-    img_array = np.full((size, size, 3), base_color, dtype=np.uint8)
-    noise = np.random.normal(0, 8, (size, size, 3)).astype(np.int16)
+def parse_args():
+    parser = argparse.ArgumentParser(description="VisionGuard Synthetic Data Generator")
+    parser.add_argument("--output_dir", type=str, default="./data", help="Output directory for dataset")
+    parser.add_argument("--train_samples", type=int, default=140, help="Total training samples (split evenly)")
+    parser.add_argument("--val_samples", type=int, default=30, help="Total validation samples")
+    parser.add_argument("--test_samples", type=int, default=30, help="Total test samples")
+    parser.add_argument("--img_size", type=int, default=224, help="Image resolution (width/height)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    return parser.parse_args()
+
+def generate_base_component(size: int) -> Tuple[Image.Image, Tuple[int, int, int]]:
+    """Creates a base industrial metallic component with realistic texture and noise."""
+    base_val = random.randint(185, 215)
+    img_array = np.full((size, size, 3), base_val, dtype=np.uint8)
+    noise = np.random.normal(0, 7, (size, size, 3)).astype(np.int16)
     img_array = np.clip(img_array + noise, 0, 255).astype(np.uint8)
     
     img = Image.fromarray(img_array)
     draw = ImageDraw.Draw(img)
     
-    # 2. Draw circular industrial product (e.g., metal washer/bearing)
     center = size // 2
-    radius = size // 3
-    draw.ellipse(
-        [center - radius, center - radius, center + radius, center + radius],
-        outline=(80, 80, 80),
-        width=4
-    )
-    inner_radius = radius // 2
-    draw.ellipse(
-        [center - inner_radius, center - inner_radius, center + inner_radius, center + inner_radius],
-        fill=(120, 120, 120),
-        outline=(60, 60, 60),
-        width=3
-    )
+    outer_r = int(size * 0.38)
+    inner_r = int(size * 0.18)
+    
+    draw.ellipse([center - outer_r, center - outer_r, center + outer_r, center + outer_r],
+                 outline=(70, 70, 70), width=4)
+    draw.ellipse([center - inner_r, center - inner_r, center + inner_r, center + inner_r],
+                 fill=(110, 110, 110), outline=(50, 50, 50), width=3)
+                 
+    return img, (center, outer_r, inner_r)
 
-    # 3. Add defects if defective
-    if is_defect:
-        defect_type = random.choice(["scratch", "crack", "burn_hole"])
-        
-        if defect_type == "scratch":
-            # Dark scratch lines
-            x1, y1 = random.randint(50, 170), random.randint(50, 170)
-            x2, y2 = x1 + random.randint(-40, 40), y1 + random.randint(-40, 40)
-            draw.line([x1, y1, x2, y2], fill=(20, 20, 20), width=3)
-            
-        elif defect_type == "crack":
-            # Jagged crack
-            points = [(random.randint(70, 150), random.randint(70, 150))]
-            for _ in range(4):
-                last_pt = points[-1]
-                points.append((last_pt[0] + random.randint(-15, 15), last_pt[1] + random.randint(-15, 15)))
-            draw.line(points, fill=(10, 10, 10), width=2)
-            
-        elif defect_type == "burn_hole":
-            # Dark oxidized spot
-            bx, by = random.randint(80, 140), random.randint(80, 140)
-            br = random.randint(6, 14)
-            draw.ellipse([bx - br, by - br, bx + br, by + br], fill=(30, 15, 15))
+def inject_defect(img: Image.Image, center_info: Tuple[int, int, int]) -> Image.Image:
+    """Injects one of four distinct industrial defect classes."""
+    draw = ImageDraw.Draw(img)
+    center, outer_r, inner_r = center_info
+    defect_type = random.choice(["scratch", "crack", "contamination", "dent"])
+
+    if defect_type == "scratch":
+        x1 = random.randint(center - outer_r + 15, center + outer_r - 15)
+        y1 = random.randint(center - outer_r + 15, center + outer_r - 15)
+        length = random.randint(30, 70)
+        angle = random.uniform(0, 2 * np.pi)
+        x2 = int(x1 + length * np.cos(angle))
+        y2 = int(y1 + length * np.sin(angle))
+        draw.line([x1, y1, x2, y2], fill=(25, 25, 25), width=random.randint(2, 4))
+
+    elif defect_type == "crack":
+        curr_x = random.randint(center - outer_r + 25, center + outer_r - 25)
+        curr_y = random.randint(center - outer_r + 25, center + outer_r - 25)
+        points = [(curr_x, curr_y)]
+        for _ in range(random.randint(4, 7)):
+            curr_x += random.randint(-16, 16)
+            curr_y += random.randint(-16, 16)
+            points.append((curr_x, curr_y))
+        draw.line(points, fill=(15, 15, 15), width=2)
+
+    elif defect_type == "contamination":
+        spot_x = random.randint(center - outer_r + 20, center + outer_r - 20)
+        spot_y = random.randint(center - outer_r + 20, center + outer_r - 20)
+        rad = random.randint(8, 18)
+        draw.ellipse([spot_x - rad, spot_y - rad, spot_x + rad, spot_y + rad], fill=(45, 30, 20))
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.7))
+
+    elif defect_type == "dent":
+        dent_x = center + int(outer_r * np.cos(random.uniform(0, 2 * np.pi)))
+        dent_y = center + int(outer_r * np.sin(random.uniform(0, 2 * np.pi)))
+        dr = random.randint(10, 16)
+        draw.ellipse([dent_x - dr, dent_y - dr, dent_x + dr, dent_y + dr], fill=(80, 80, 80), outline=(30, 30, 30))
 
     return img
 
-def generate_dataset(base_dir: str = "./data"):
-    # Split counts: 70% Train (140), 15% Val (30), 15% Test (30)
+def build_dataset(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+
     splits = {
-        "train": {"normal": 70, "defective": 70},
-        "val":   {"normal": 15, "defective": 15},
-        "test":  {"normal": 15, "defective": 15}
+        "train": (args.train_samples // 2, args.train_samples // 2),
+        "val":   (args.val_samples // 2, args.val_samples // 2),
+        "test":  (args.test_samples // 2, args.test_samples // 2)
     }
 
-    print("Generating synthetic manufacturing dataset...")
-    for split, counts in splits.items():
-        for category, count in counts.items():
-            folder_path = os.path.join(base_dir, split, category)
-            os.makedirs(folder_path, exist_ok=True)
+    print(f"[*] Initializing synthetic dataset generation at: {args.output_dir}")
+    for split_name, (norm_cnt, def_cnt) in splits.items():
+        for category, count in [("normal", norm_cnt), ("defective", def_cnt)]:
+            dir_path = os.path.join(args.output_dir, split_name, category)
+            os.makedirs(dir_path, exist_ok=True)
             
-            is_defect = (category == "defective")
             for i in range(1, count + 1):
-                img = create_synthetic_image(is_defect=is_defect)
-                filename = f"{category}_{i:03d}.png"
-                img.save(os.path.join(folder_path, filename))
+                img, center_info = generate_base_component(args.img_size)
+                if category == "defective":
+                    img = inject_defect(img, center_info)
                 
-            print(f"  ✓ Created {count} images in {split}/{category}/")
+                filename = f"{category}_{i:04d}.png"
+                img.save(os.path.join(dir_path, filename))
 
-    print("\nDataset ready inside ./data/")
+            print(f"  ✓ {split_name.capitalize():5s} | {category:9s} : {count} images written.")
+
+    print("[*] Dataset generation completed successfully.\n")
 
 if __name__ == "__main__":
-    generate_dataset()
+    args = parse_args()
+    build_dataset(args)
